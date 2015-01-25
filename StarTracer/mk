@@ -1,0 +1,9 @@
+g++ -D_FILE_OFFSET_BITS=64 GalaxyTracer.cpp  -o GalaxyTracer.x                  
+
+
+
+
+
+
+
+
