@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <algorithm>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <map>
@@ -28,7 +29,7 @@
 #include "tree_util.hh"
 
 using namespace std;
-#define DEBUG_ME false
+#define DEBUG_ME true
 #define RadFrac  0.6
 
 //////////////////////
@@ -62,11 +63,12 @@ bool GetSnap( string &snap, int &isnap)
 	indexCh=snap.find_last_of('/');
 	if((indexCh)!=npos)
 		snap.assign(snap,int(indexCh+1), int(snap.size()-1));
-
-	while(snap.find_first_of("_")!=0)
+	//cout<<"Snap: "<<snap<<endl;
+	while(snap.find_last_of("_")!=0)
 		{
-		indexCh=snap.find_first_of("_");
-		dig_snap=dig_snap.assign(snap,int(indexCh+1), int(3));
+		indexCh=snap.find_last_of("_");
+		dig_snap=dig_snap.assign(snap,int(indexCh+1), int(4));
+		//	cout<<dig_snap<<endl;
 		if (StringToInt(dig_snap, isnap))
 			{
 			snap=dig_snap;
@@ -336,18 +338,40 @@ void CGadget::GetHeader(ifstream *fd){
 	my_fread((void*)&myhead.flag_effmodel,sizeof(int), 1, fd);      swap_Nbyte((char*)&myhead.flag_effmodel,1,4);
 	my_fread((void*)myhead.fill,72*sizeof(char), 1, fd);
 	GetBlk(fd, &blk);
+cout << "=====================" << endl;
+    for (unsigned it = 0; it < 6; it++) {
 
+        printf("N[%d]=%0.9d\tMass[%d]=%g\n", it, myhead.npart[it], it,
+                myhead.mass[it]);
+    };
+    cout << "=====================" << endl;
 	};
 
 
 bool CGadget::ReadData(string file)
 	{
 	ifstream file_to_read(file.data(),  ios::in|ios::binary);
-
+	bool isgood=true, is_multi=false;
 	char name[5];
+	unsigned long Ntotal;
+	vector<string> vmmfile;
 	memset(name, 0,sizeof(name));
 	if(file_to_read.bad())
-		return false;
+	       isgood=false;
+	else
+	  {
+	    file_to_read.close();
+	    string mmfile=file+".0";
+	    file_to_read.open(mmfile.data(), ios::in|ios::binary);
+	    
+	    if(!file_to_read.bad()){
+	      isgood=true;
+	      is_multi=true;
+	      cout<<"Found multiple file format"<<endl;
+
+	    }else 
+	      return false;
+	  }
 
 	GetBlk(&file_to_read, &blk);
 	if(blk != 8)
@@ -359,38 +383,60 @@ bool CGadget::ReadData(string file)
 
 	GetBlkName(&file_to_read, name);
 
-
-
 	GetBlk(&file_to_read, &blk);
 	GetHeader(&file_to_read);
-
-	int nid=0, id=0, sizeall, size, nskip=0;
-	GetBlk(&file_to_read, &nid);
-	sizeall=find_block(&file_to_read, "ID  ");
-	size=this->myhead.npart[4]*sizeof(int);
-
-	if(sizeall !=size)
-		{
-			SeekToType(&file_to_read,4, sizeof(int));
-		}
-	ID=new int [this->myhead.npart[4]];
-	GetBlk(&file_to_read, &blk);
-	my_fread(ID, size, 1, &file_to_read);
-	swap_Nbyte((char*)ID,this->myhead.npart[4],4);
-	cout<<ID[0]<<" "<<ID[this->myhead.npart[4]-1]<<endl;
-	
-	sizeall=find_block(&file_to_read, "POS ");
-	GetBlk(&file_to_read, &blk);
-	size=this->myhead.npart[4]*sizeof(float);
-	P=new strParticleData [this->myhead.npart[4]];
-	
-	SeekToType(&file_to_read,4, sizeof(strParticleData));
-	my_fread(P, size, 3, &file_to_read);
-	swap_Nbyte((char*)P,this->myhead.npart[4]*3,4);
-	
-
-	return true;
+	if(is_multi){
+	  Ntotal=myhead.npartTotal[4];
+	  char buffer[4];
+	  for(int i=0;i<myhead.num_files;i++){
+	    sprintf(buffer, ".%d", i);
+	    vmmfile.push_back(file + string(buffer));
+	  }
 	}
+	else
+	  Ntotal=myhead.npart[4];
+	
+	ID=new int [Ntotal];
+	P=new strParticleData [Ntotal];
+	size_t icurr_pos=0;
+	for(int fi=0;fi<myhead.num_files;fi++){
+
+	  cout<<"Reading: "<<vmmfile[fi]<<endl;
+	  int nid=0, id=0, sizeall, size, nskip=0;
+	  file_to_read.close();
+	  file_to_read.open(vmmfile[fi].data(), ios::in|ios::binary);
+	  
+	  find_block(&file_to_read, (char *)"HEAD");
+	  GetHeader(&file_to_read);
+	  cout<<this->myhead.npart[4]<<endl;
+
+	  GetBlk(&file_to_read, &nid);
+	  sizeall=find_block(&file_to_read, (char *)"ID  ");
+	  size=this->myhead.npart[4]*sizeof(int);
+	  
+	  if(sizeall !=size){
+	    SeekToType(&file_to_read,4, sizeof(int));
+	  }
+	  
+	  GetBlk(&file_to_read, &blk);
+	  my_fread(ID+icurr_pos, size, 1, &file_to_read);
+	  swap_Nbyte((char*)(ID+icurr_pos),this->myhead.npart[4],4);
+	  
+	  
+	  sizeall=find_block(&file_to_read, (char *)"POS ");
+	  GetBlk(&file_to_read, &blk);
+	  size=this->myhead.npart[4]*sizeof(float);
+	  
+	  
+	  SeekToType(&file_to_read,4, sizeof(strParticleData));
+	  my_fread(P+icurr_pos, size, 3, &file_to_read);
+	  swap_Nbyte((char*)(P+icurr_pos),this->myhead.npart[4]*3,4);
+	  icurr_pos+=this->myhead.npart[4];
+	  
+	}
+
+return true;
+}
 
 class CGalaxy;
 
@@ -633,8 +679,8 @@ void CFOFCatalog::FillIDs()
 		testf=fopen("C:/mingw/1.0/home/arm2arm/DATA/pos.txt", "w");
 		first_flag=false;
 		}else
-			testf=fopen("C:/mingw/1.0/home/arm2arm/DATA/pos.txt", "a");
-
+	  testf=fopen("C:/mingw/1.0/home/arm2arm/DATA/pos.txt", "a");
+	
 #endif
 		vector<float> dist2;
 		vector<int> indexOfDist2;
@@ -832,7 +878,7 @@ class CGenTree
 		CFOFCatalog *m_cat1;
 		CFOFCatalog *m_cat2;
 		int isnap1, isnap2;
-		tree<CGalaxy*> tree;
+		tree<CGalaxy*> m_tree;
 	};
 
 const char *MYSQL_UPDATE_processed_steps=
@@ -1092,11 +1138,14 @@ int main(int argc, char **argv)
 
 		string SnapName1=string(argv[1]);
 		string SnapName2=string(argv[2]);
-
 		string CatName1=string(argv[3]);
 		string CatName2=string(argv[4]);
-
-
+		
+		/*		int isnap;
+		GetSnap( SnapName1, isnap);
+		cout<<isnap<<endl;exit(0);
+		*/
+		
 		CGadget gad(SnapName1);
 		CGadget gad2(SnapName2);
 		CFOFCatalog cat1(CatName1);

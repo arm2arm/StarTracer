@@ -336,7 +336,7 @@ class CGadget : public  CData
 				if(P!=NULL)
 				 delete [] P;
 			};
-		bool ReadData(string file);
+		bool ReadData(string file);bool ReadDataOld(string file);
 		void GetHeader(ifstream *file_to_read);
 		bool good(){return m_isgood;};	
 		int find_block(ifstream *fd,char *label)
@@ -429,8 +429,97 @@ void CGadget::GetHeader(ifstream *fd){
 
 	};
 
-
 bool CGadget::ReadData(string file)
+	{
+	ifstream file_to_read(file.data(),  ios::in|ios::binary);
+	bool isgood=true, is_multi=false;
+	char name[5];
+	unsigned long Ntotal;
+	vector<string> vmmfile;
+	memset(name, 0,sizeof(name));
+	if(file_to_read.bad())
+	       isgood=false;
+	else
+	  {
+	    file_to_read.close();
+	    string mmfile=file+".0";
+	    file_to_read.open(mmfile.data(), ios::in|ios::binary);
+	    
+	    if(!file_to_read.bad()){
+	      isgood=true;
+	      is_multi=true;
+	      cout<<"Found multiple file format"<<endl;
+
+	    }else 
+	      return false;
+	  }
+
+	GetBlk(&file_to_read, &blk);
+	if(blk != 8)
+		{
+		swp_flag=true;
+		swap_Nbyte((char*)&blk,1,4);
+		if(blk!=8)return false;
+		}
+
+	GetBlkName(&file_to_read, name);
+
+	GetBlk(&file_to_read, &blk);
+	GetHeader(&file_to_read);
+	if(is_multi){
+	  Ntotal=myhead.npartTotal[4];
+	  char buffer[4];
+	  for(int i=0;i<myhead.num_files;i++){
+	    sprintf(buffer, ".%d", i);
+	    vmmfile.push_back(file + string(buffer));
+	  }
+	}
+	else
+	  Ntotal=myhead.npart[4];
+	
+	ID=new int [Ntotal];
+	P=new strParticleData [Ntotal];
+	size_t icurr_pos=0;
+	for(int fi=0;fi<myhead.num_files;fi++){
+
+	  cout<<"Reading: "<<vmmfile[fi]<<endl;
+	  unsigned int nid=0, id=0, sizeall, size, nskip=0;
+	  file_to_read.close();
+	  file_to_read.open(vmmfile[fi].data(), ios::in|ios::binary);
+	  
+	  find_block(&file_to_read, (char *)"HEAD");
+	  GetHeader(&file_to_read);
+	  cout<<this->myhead.npart[4]<<endl;
+
+	  GetBlk(&file_to_read, &nid);
+	  sizeall=find_block(&file_to_read, (char *)"ID  ");
+	  size=this->myhead.npart[4]*sizeof(int);
+	  
+	  if(sizeall !=size){
+	    SeekToType(&file_to_read,4, sizeof(int));
+	  }
+	  
+	  GetBlk(&file_to_read, &blk);
+	  my_fread(ID+icurr_pos, size, 1, &file_to_read);
+	  swap_Nbyte((char*)(ID+icurr_pos),this->myhead.npart[4],4);
+	  
+	  
+	  sizeall=find_block(&file_to_read, (char *)"POS ");
+	  GetBlk(&file_to_read, &blk);
+	  size=this->myhead.npart[4]*sizeof(float);
+	  
+	  
+	  SeekToType(&file_to_read,4, sizeof(strParticleData));
+	  my_fread(P+icurr_pos, size, 3, &file_to_read);
+	  swap_Nbyte((char*)(P+icurr_pos),this->myhead.npart[4]*3,4);
+	  icurr_pos+=this->myhead.npart[4];
+	  
+	}
+
+return true;
+}
+
+bool CGadget::ReadDataOld(string file)
 	{
 	ifstream file_to_read(file.data(),  ios::in|ios::binary);
 
@@ -456,7 +545,7 @@ bool CGadget::ReadData(string file)
 
 	unsigned int nid=0, id=0, sizeall, size, nskip=0;
 	GetBlk(&file_to_read, &nid);
-	sizeall=find_block(&file_to_read, "ID  ");
+	sizeall=find_block(&file_to_read, (char *)"ID  ");
 	size=this->myhead.npart[4]*sizeof(int);
 
 	if(sizeall !=size)
@@ -469,7 +558,7 @@ bool CGadget::ReadData(string file)
 	swap_Nbyte((char*)ID,this->myhead.npart[4],4);
 	//cout<<ID[0]<<" "<<ID[this->myhead.npart[4]-1]<<endl;
 	
-	sizeall=find_block(&file_to_read, "POS ");
+	sizeall=find_block(&file_to_read, (char *)"POS ");
 	GetBlk(&file_to_read, &blk);
 	size=this->myhead.npart[4]*sizeof(float);
 	P=new strParticleData [this->myhead.npart[4]];
@@ -1101,7 +1190,7 @@ void CGenTree::MakeTree(void)
 		if(m_cat1->halos[i]->Ntotal > 0)
 			{
 
-			for(unsigned int j=0;j<m_cat2->halos.size();j++)
+			  for(unsigned int j=0;j<m_cat2->halos.size();j++)
 				{
 				iCount=0;
 				set<int> a(m_cat1->halos[i]->id.begin(),
@@ -1226,14 +1315,14 @@ int CGenTree::TraceID(int IDtrace, unsigned int* galid)
 	timer.start();
 	cout<<endl;
 	cout<<".TraceOne.";
-	for(unsigned int i=0;i<m_cat1->halos.size();i++)
+	for(unsigned int i=0;i<fmin(5,m_cat1->halos.size());i++)
 		{
 		if((i%50)==0)
 			cout<<"."<<flush;
 		
 		if(m_cat1->halos[i]->ID==IDtrace)
 			{
-    		for(unsigned int j=0;j<m_cat2->halos.size();j++)
+			  for(unsigned int j=0;j<fmin(5,m_cat2->halos.size());j++)
 				{
 				iCount=0;
 				set<int> a(m_cat1->halos[i]->id.begin(),
@@ -1299,18 +1388,19 @@ void usage(const char*execname)
 	{
 	cout<<"\n*****************************************************"<<endl;
 	cout<<"A.Khalatyan"<<endl;
-	cout<<"StarTracer v0.1 2008, Marseille\n"<<endl;
-	cout<<"Creates mysql query file to fill\nAFOF groups host-progenotor relations."<<endl;
-	cout<<"This tables can be used directly by \nthe Tree-web interface.\n"<<endl;
+	cout<<"StarTracer v1.0 2015, Potsdam\n"<<endl;
+	cout<<"Creates AFOF groups host-progenotor relations."<<endl;
+	cout<<"This tables can be used directly by spmviewer\n"<<endl;
 	cout<<"Usage:"<<endl;
-	cout<<execname<<" [snappath_snap1_]\\ \n [snappath_snap1_]\\ \n [grppath_snap1_.grp.DAT]\\ \n [grppath_snap2_.grp.DAT] \n"<<endl;
-	cout<<"program output will be ASCII file: \n\t  [grppath]/tree_snap1_snap2.mysql"<<endl;
-	cout<<"Comments: to fill table use: \n\t  mysql -uMySqlUsername < \\ \n\t\t[grppath]/tree_snap1_snap2.mysql"<<endl;
+	cout<<execname<<" [snappath_with_format] [grppath_file_with_format.grp.DAT] isnapstart isnapend idtrace \n"<<endl;
+	cout<<"program output will be ASCII file: \n\t  idtrace_isnapstart_isnapend.log"<<endl;
+	cout<<"Example: GalaxyTracer.x /lnew/arm2arm/Projects/RENDER/2014/RHO/SNAPSR/snapdir_%04d/snap_LG_WMAP5_4096_%04d   /lnew/arm2arm/Projects/RENDER/2014/AFOF/ST_01_snap_LG_WMAP5_4096_%04d.grp.DAT 700 10 1"<<endl;
 	cout<<"*******************************************************\n"<<endl;
 	}
 
 int main(int argc, char **argv)
 	{
+	  cout<<"----------------------------------------------------------"<<endl;
 	if(argc!=6)
 		{
 		//Under linux directory separator given by "/"
@@ -1333,7 +1423,10 @@ int main(int argc, char **argv)
 		int istart=atoi(argv[3]);
 		int iend=atoi(argv[4]);
 		int idtrace=atoi(argv[5]);
-
+		if(istart <iend){
+		  cout<<"istart="<<istart<<" shoud be smaller than iend="<<iend<<endl;
+		  exit(1);
+		}
 		CGadget *gad1;
 		CGadget *gad2;
 		unsigned int galid=0;
@@ -1345,7 +1438,7 @@ int main(int argc, char **argv)
 		int idNext;
 		//first=snap, second=ID of Most Massive progenitor;
 		vector<Map_Int_Int_Pair> history;
-		sprintf(buf, "%0.3d_%0.3d.log",istart,iend);
+		sprintf(buf, "%d_%0.4d_%0.4d.log",idtrace,istart,iend);
                 string historyname(buf);
              
 		FILE *historyfile=fopen(historyname.c_str(), "w");	 
@@ -1356,23 +1449,30 @@ int main(int argc, char **argv)
 		isnap2=istart;
 		int isnap=isnap2;
 		bool finish=false;
+	
 		while(isnap>iend+1 && !finish)	{
 			isnap2=isnap-1;
 			nexttest=1;
+			
 /////////////////////////////////////////////////////////////////
 			do{
 				nexttest--;
 				isnap1=isnap+nexttest;
-				sprintf(buf,SnapName.c_str(),isnap1);
+				sprintf(buf,SnapName.c_str(),isnap1,isnap1);
 				snap1=string(buf);
 				sprintf(buf,FofName.c_str(),isnap1);
 				fofname1=string(buf);
-				exist_all_files=FileExists(snap1)&&FileExists(fofname1);
-				cout<<"Trying snap1: "<<isnap1<<endl;
+				
+				exist_all_files=(FileExists(snap1)||FileExists(snap1+".0"))&&FileExists(fofname1);
+				cout<<"Trying snap1: "<<isnap1<<" "<<snap1<<" "<<fofname1<<endl;
+
 				if(isnap1<0)finish=true;
+				cout<<"here: "<<isnap1<<" "<<" "<<iend<<endl;
 				}while(!exist_all_files && (isnap1>iend)&&finish);
-			if(!exist_all_files)
-				break;
+			if(!exist_all_files){
+			  cout<<"here: "<<isnap1<<" "<<exist_all_files<<endl;
+			  break;
+			}
 			else
 				isnap+=nexttest;
 
@@ -1380,11 +1480,12 @@ int main(int argc, char **argv)
 			do{
 				nexttest--;
 				isnap2=isnap+nexttest;
-				sprintf(buf,SnapName.c_str(),isnap2);
+				sprintf(buf,SnapName.c_str(),isnap2,isnap2);
 				snap2=string(buf);
 				sprintf(buf,FofName.c_str(),isnap2);
 				fofname2=string(buf);
-				exist_all_files=FileExists(snap2)&&FileExists(fofname2);
+				exist_all_files=(FileExists(snap2)||FileExists(snap2+".0"))&&FileExists(fofname2);
+				//exist_all_files=FileExists(snap2)&&FileExists(fofname2);
 				cout<<"Trying snap2: "<<isnap2<<endl;
 				if(isnap2<0)finish=true;
 				}while(!exist_all_files && (isnap1>(iend+1))&& finish);

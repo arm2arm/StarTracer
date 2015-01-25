@@ -1,4 +1,5 @@
 g++ -D_FILE_OFFSET_BITS=64 GalaxyTracer.cpp  -o GalaxyTracer.x                  
+#g++ -D_FILE_OFFSET_BITS=64 StarTracer.cpp  -o StarTracer.x                  
 
 
 
